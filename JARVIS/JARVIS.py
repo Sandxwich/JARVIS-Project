@@ -1,27 +1,37 @@
-import numpy as np
-
 import tensorflow as tf
-from tensorflow.keras import models
+import numpy as np
+import sounddevice as sd
 
-from recording_helper import record_audio, terminate
-from tf_helper import preprocess_audiobuffer
+# Function to convert audio waveform to spectrogram
+def get_spectrogram(waveform):
+    spectrogram = tf.signal.stft(
+        waveform, frame_length=255, frame_step=128)
+    spectrogram = tf.abs(spectrogram)
+    spectrogram = spectrogram[..., tf.newaxis]
+    return spectrogram
 
-commands = ['left', 'down', 'stop', 'up', 'right', 'no', 'go', 'yes']
+# Function to record audio from the microphone
+def record_audio(duration=1, sample_rate=16000):
+    recording = sd.rec(int(duration * sample_rate), samplerate=sample_rate, channels=1, dtype='float32')
+    sd.wait()
+    return recording.flatten()
 
-loaded_model = tf.saved_model.load("saved")
+# Function to make a prediction from live audio
+def predict_live_audio(model, label_names, duration=1, sample_rate=16000):
+    live_audio = record_audio(duration, sample_rate)
+    spectrogram = get_spectrogram(live_audio)
+    spectrogram = spectrogram[tf.newaxis, ...]
+    prediction = model(spectrogram)
+    predicted_index = tf.argmax(prediction[0]).numpy()
+    return label_names[predicted_index]
 
-def predict_mic():
-    audio = record_audio()
-    spec = preprocess_audiobuffer(audio)
-    prediction = loaded_model(spec)
-    label_pred = np.argmax(prediction, axis=1)
-    command = commands[label_pred[0]]
-    print("Predicted label:", command)
-    return command
+# Load the trained model (replace 'path/to/your/model' with the actual path)
+model = tf.keras.models.load_model('path/to/your/model')
 
-if __name__ == "__main__":
-    while True:
-        command = predict_mic()
-        if command == "stop":
-            terminate()
-            break
+# Define your label names based on your training
+label_names = ['no', 'yes', 'down', 'go', 'left', 'up', 'right', 'stop']
+
+# Run the live prediction
+print("Say something...")
+predicted_command = predict_live_audio(model, label_names)
+print("Predicted Command:", predicted_command)
